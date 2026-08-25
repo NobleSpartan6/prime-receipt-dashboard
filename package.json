@@ -1,0 +1,16 @@
+{
+  "name": "prime-receipt-dashboard",
+  "version": "0.1.0",
+  "description": "Local web dashboard that reads hermes-prime-rlm run receipts and renders verification evidence. TypeScript, zero runtime dependencies.",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx server.ts",
+    "build": "tsc --noEmit && echo 'typecheck OK'",
+    "start": "tsx server.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
