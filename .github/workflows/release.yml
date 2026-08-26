@@ -3,15 +3,26 @@ name: release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to rebuild and publish
+        required: true
+        type: string
 
 permissions:
   contents: write
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
 jobs:
   release-artifact:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
@@ -19,7 +30,7 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - name: Verify tag matches package version
-        run: test "${GITHUB_REF_NAME}" = "v$(node -p 'require(\"./package.json\").version')"
+        run: test "$RELEASE_TAG" = "v$(node -p 'require("./package.json").version')"
       - run: npm test
       - name: Build and inspect release tarball
         id: pack
@@ -49,7 +60,7 @@ jobs:
           curl -fsS http://127.0.0.1:8799/api/runs | node -e 'let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{const r=JSON.parse(s); if(r.length!==1||r[0].integrity!=="SELF_HASH_VALID"||r[0].authenticity!=="UNSIGNED"||r[0].verificationStatus!=="PASSED"||r[0].verificationAuthority!=="MODEL_PROPOSED") process.exit(1)})'
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: prime-receipt-dashboard-${{ github.ref_name }}
+          name: prime-receipt-dashboard-${{ env.RELEASE_TAG }}
           path: |
             ${{ steps.pack.outputs.tarball }}
             ${{ steps.pack.outputs.tarball }}.sha256
@@ -58,8 +69,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            "${{ steps.pack.outputs.tarball }}" \
-            "${{ steps.pack.outputs.tarball }}.sha256" \
-            --title "prime-receipt-dashboard $GITHUB_REF_NAME" \
-            --generate-notes
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" \
+              "${{ steps.pack.outputs.tarball }}" \
+              "${{ steps.pack.outputs.tarball }}.sha256" \
+              --clobber
+          else
+            gh release create "$RELEASE_TAG" \
+              "${{ steps.pack.outputs.tarball }}" \
+              "${{ steps.pack.outputs.tarball }}.sha256" \
+              --title "prime-receipt-dashboard $RELEASE_TAG" \
+              --generate-notes
+          fi
