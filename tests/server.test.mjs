@@ -135,6 +135,7 @@ describe("receipt validation boundary", () => {
       integrity_status: "RECORDED_NOT_REVALIDATED",
       authenticity_status: "UNSIGNED",
       acceptance_status: "PENDING",
+      error_code: "WORKTREE_TEST_FAILURE",
       prime_command_identity: {
         argv_sha256: "b".repeat(64),
         executable_name: "python.exe",
@@ -152,6 +153,10 @@ describe("receipt validation boundary", () => {
     const badIdentity = structuredClone(payload);
     badIdentity.prime_command_identity.argv_sha256 = "not-a-hash";
     assert.equal(validateReceiptObject(badIdentity).ok, false);
+
+    const badError = structuredClone(payload);
+    badError.error_code = "../../secret";
+    assert.equal(validateReceiptObject(badError).ok, false);
   });
 
   it("rejects malformed nested platform, check digest, and optional v0.1.1 fields", async () => {

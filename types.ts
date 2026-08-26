@@ -73,6 +73,7 @@ export interface Receipt {
   integrity_status?: "RECORDED_NOT_REVALIDATED";
   authenticity_status?: "UNSIGNED";
   acceptance_status?: "PENDING" | "ACCEPTED" | "REJECTED";
+  error_code?: string;
   prime_command_identity?: {
     argv_sha256: string;
     executable_name: string;
@@ -178,6 +179,7 @@ const RECEIPT_KEYS = new Set([
   "execution_status", "candidate_status", "verification_status",
   "verification_authority", "integrity_status", "authenticity_status",
   "acceptance_status", "prime_command_identity",
+  "error_code",
 ]);
 const PLATFORM_KEYS = new Set(["os_name", "sys_platform", "python_version"]);
 const CHANGED_PATH_KEYS = new Set(["modified", "deleted", "renamed", "untracked"]);
@@ -390,6 +392,10 @@ export function validateReceiptObject(raw: unknown): ValidationResult {
   }
   if (r.source_checkout_unchanged !== undefined && !isBool(r.source_checkout_unchanged))
     return { ok: false, reason: "source_checkout_unchanged not boolean" };
+  if (
+    r.error_code !== undefined &&
+    (!isStr(r.error_code) || !/^[A-Z][A-Z0-9_]{0,127}$/.test(r.error_code))
+  ) return { ok: false, reason: "error_code malformed" };
 
   const optionalEnums: ReadonlyArray<readonly [string, ReadonlySet<string>]> = [
     ["execution_status", new Set(["COMPLETED", "FAILED", "UNCERTAIN"])],
