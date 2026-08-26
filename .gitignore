@@ -1,5 +1,16 @@
 # Local dev
 node_modules/
+dist/
+.build-browser/
+public/app.js
+test-fixture/
+.artifact-smoke/
+.ci-install/
+.ci-runs/
+.release-install/
+.release-runs/
+pack.json
+*.tgz
 *.log
 
 # Environment

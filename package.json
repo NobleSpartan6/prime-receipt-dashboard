@@ -1,15 +1,29 @@
 {
   "name": "prime-receipt-dashboard",
-  "version": "0.1.0",
-  "description": "Local web dashboard that reads hermes-prime-rlm run receipts and renders verification evidence. TypeScript, zero runtime dependencies.",
+  "version": "0.1.1",
+  "description": "Local web dashboard that reads hermes-prime-rlm run receipts, validates them (structure + self-hash), and renders verification evidence. TypeScript, zero runtime dependencies.",
   "type": "module",
+  "files": [
+    "dist/",
+    "public/",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "dev": "tsx server.ts",
-    "build": "tsc --noEmit && echo 'typecheck OK'",
-    "start": "tsx server.ts"
+    "build": "tsc -p tsconfig.server.json && tsc -p tsconfig.browser.json && node scripts/postbuild.js",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.browser.json --noEmit",
+    "test:unit": "node --test tests/server.test.mjs tests/bounded-io.test.mjs",
+    "test:browser": "node --test tests/browser.test.mjs",
+    "test": "npm run build && npm run test:unit && npm run test:browser",
+    "start": "node dist/server.js",
+    "dev": "npm run build && npm start"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "playwright": "^1.55.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }

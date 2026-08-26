@@ -1,0 +1,65 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release-artifact:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Verify tag matches package version
+        run: test "${GITHUB_REF_NAME}" = "v$(node -p 'require(\"./package.json\").version')"
+      - run: npm test
+      - name: Build and inspect release tarball
+        id: pack
+        shell: bash
+        run: |
+          npm pack --json > pack.json
+          TARBALL=$(node -p 'require("./pack.json")[0].filename')
+          node -e 'const p=require("./pack.json")[0]; const names=p.files.map(f=>f.path); for (const f of ["dist/server.js","dist/types.js","dist/bounded-io.js","public/app.js","public/index.html","public/style.css"]) if (!names.includes(f)) throw new Error(`missing from package: ${f}`)'
+          sha256sum "$TARBALL" > "$TARBALL.sha256"
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
+      - name: Clean-install and run exact tarball
+        shell: bash
+        run: |
+          TARBALL="${{ steps.pack.outputs.tarball }}"
+          node -e 'import("./tests/helpers.mjs").then(m => m.writeRun(".release-runs"))'
+          npm install --prefix .release-install --omit=dev "./$TARBALL" --no-fund --no-audit
+          cd .release-install
+          RUNS_DIR=$(cd ../.release-runs && pwd)
+          PORT=8799 PRIME_RLM_RUNS="$RUNS_DIR" node node_modules/prime-receipt-dashboard/dist/server.js &
+          PID=$!
+          trap 'kill "$PID" 2>/dev/null || true' EXIT
+          for i in $(seq 1 50); do
+            curl -fsS http://127.0.0.1:8799/api/health >/dev/null && break
+            sleep 0.1
+          done
+          curl -fsS http://127.0.0.1:8799/app.js | grep -q textContent
+          curl -fsS http://127.0.0.1:8799/api/runs | node -e 'let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{const r=JSON.parse(s); if(r.length!==1||r[0].integrity!=="SELF_HASH_VALID"||r[0].authenticity!=="UNSIGNED"||r[0].verificationStatus!=="PASSED"||r[0].verificationAuthority!=="MODEL_PROPOSED") process.exit(1)})'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: prime-receipt-dashboard-${{ github.ref_name }}
+          path: |
+            ${{ steps.pack.outputs.tarball }}
+            ${{ steps.pack.outputs.tarball }}.sha256
+          if-no-files-found: error
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "${{ steps.pack.outputs.tarball }}" \
+            "${{ steps.pack.outputs.tarball }}.sha256" \
+            --title "prime-receipt-dashboard $GITHUB_REF_NAME" \
+            --generate-notes

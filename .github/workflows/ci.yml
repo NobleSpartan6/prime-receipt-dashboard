@@ -1,0 +1,78 @@
+name: ci
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-unit:
+    name: build + unit (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run test:unit
+      - name: Inspect package artifact
+        shell: bash
+        run: |
+          npm pack --json > pack.json
+          node -e 'const p=require("./pack.json")[0]; const names=p.files.map(f=>f.path); for (const f of ["dist/server.js","dist/types.js","dist/bounded-io.js","public/app.js","public/index.html","public/style.css"]) if (!names.includes(f)) throw new Error(`missing from package: ${f}`); console.log(names.join("\n"))'
+
+  browser-smoke:
+    name: emitted artifact browser smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: npm run test:browser
+
+  package-smoke:
+    name: exact tarball clean-install + start
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Pack, clean-install, and start exact artifact
+        shell: bash
+        run: |
+          npm pack --json > pack.json
+          TARBALL=$(node -p 'require("./pack.json")[0].filename')
+          node -e 'import("./tests/helpers.mjs").then(m => m.writeRun(".ci-runs"))'
+          npm install --prefix .ci-install --omit=dev "./$TARBALL" --no-fund --no-audit
+          cd .ci-install
+          RUNS_DIR=$(cd ../.ci-runs && pwd)
+          PORT=8799 PRIME_RLM_RUNS="$RUNS_DIR" node node_modules/prime-receipt-dashboard/dist/server.js &
+          PID=$!
+          trap 'kill "$PID" 2>/dev/null || true' EXIT
+          for i in $(seq 1 50); do
+            curl -fsS http://127.0.0.1:8799/api/health >/dev/null && break
+            sleep 0.1
+          done
+          curl -fsS http://127.0.0.1:8799/app.js | grep -q textContent
+          curl -fsS http://127.0.0.1:8799/api/runs | node -e 'let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{const [r]=JSON.parse(s); if(!r||r.integrity!=="SELF_HASH_VALID"||r.authenticity!=="UNSIGNED"||r.verificationStatus!=="PASSED"||r.verificationAuthority!=="MODEL_PROPOSED") process.exit(1)})'
